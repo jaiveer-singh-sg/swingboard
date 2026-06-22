@@ -4,6 +4,7 @@ import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import os
 
 # Set page to wide layout
 st.set_page_config(layout="wide", page_title="Multi-Ticker Financial Dashboard")
@@ -66,6 +67,29 @@ def get_ticker_dashboard(ticker):
         df['Resistance'] = df['High'].rolling(window=20).max()
         df['Support'] = df['Low'].rolling(window=20).min()
 
+        # Weekly volume metrics
+        df['Week'] = df.index.isocalendar().week
+        df['Year'] = df.index.year
+        df['YearWeek'] = df['Year'].astype(str) + '-W' + df['Week'].astype(str).str.zfill(2)
+
+        # Last complete week volume
+        last_week = df['YearWeek'].iloc[-1]
+        last_week_data = df[df['YearWeek'] == last_week]
+        last_weekly_volume = int(last_week_data['Volume'].sum()) if not last_week_data.empty else 0
+
+        # Average weekly volume (last 12 weeks)
+        unique_weeks = df['YearWeek'].unique()
+        if len(unique_weeks) >= 2:
+            recent_weeks = unique_weeks[-12:] if len(unique_weeks) >= 12 else unique_weeks
+            weekly_volumes = []
+            for w in recent_weeks:
+                w_data = df[df['YearWeek'] == w]
+                if not w_data.empty:
+                    weekly_volumes.append(int(w_data['Volume'].sum()))
+            avg_weekly_volume = int(sum(weekly_volumes) / len(weekly_volumes)) if weekly_volumes else 0
+        else:
+            avg_weekly_volume = last_weekly_volume
+
         df = df.ffill().bfill()
 
         current_price = float(df['Close'].iloc[-1])
@@ -97,7 +121,9 @@ def get_ticker_dashboard(ticker):
             "vwap": float(df['VWAP'].iloc[-1]),
             "sma_20": float(df['SMA_20'].iloc[-1]),
             "sma_50": float(df['SMA_50'].iloc[-1]),
-            "sma_200": float(df['SMA_200'].iloc[-1])
+            "sma_200": float(df['SMA_200'].iloc[-1]),
+            "last_weekly_volume": last_weekly_volume,
+            "avg_weekly_volume": avg_weekly_volume
         }
         return df, metrics
     except Exception:
@@ -120,9 +146,11 @@ def generate_watchlist_summary(tickers):
                     "20 SMA ($)": round(metrics["sma_20"], 2),
                     "50 SMA ($)": round(metrics["sma_50"], 2),
                     "200 SMA ($)": round(metrics["sma_200"], 2),
-                    "VWAP ($)": round(metrics["vwap"], 2),
                     "Support ($)": round(metrics["support"], 2),
                     "Resistance ($)": round(metrics["resistance"], 2),
+                    "Last Wk Vol": metrics["last_weekly_volume"],
+                    "Avg Wk Vol": metrics["avg_weekly_volume"],
+                    "VWAP ($)": round(metrics["vwap"], 2),
                     "ATR ($)": round(metrics["atr"], 2),
                     "Vol Breakout": "🚨 YES" if metrics["vol_breakout"] else "🟢 No"
                 })
@@ -130,9 +158,44 @@ def generate_watchlist_summary(tickers):
             pass
     return pd.DataFrame(summary_data)
 
+# NASDAQ 100 tickers (top holdings)
+NASDAQ_100_TICKERS = [
+    "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "META", "TSLA", "NVDA", "AVGO", "PEP",
+    "COST", "CSCO", "ADBE", "NFLX", "TXN", "QCOM", "TMUS", "INTC", "AMD", "INTU",
+    "HON", "AMAT", "SBUX", "BKNG", "ADP", "MDLZ", "GILD", "LRCX", "MU", "ISRG",
+    "VRTX", "REGN", "PANW", "SNPS", "KLAC", "ABNB", "FTNT", "CDNS", "MELI", "CTAS",
+    "NXPI", "PYPL", "MAR", "ASML", "CSX", "ORLY", "MNST", "MRVL", "ROP", "DXCM",
+    "AEP", "KDP", "TEAM", "MCHP", "ADSK", "LULU", "PAYX", "KHC", "MRNA", "EXC",
+    "XEL", "PCAR", "ODFL", "CTSH", "CEG", "TTD", "FAST", "WBD", "CSGP", "VRSK",
+    "ANSS", "EA", "FANG", "ODFL", "CPRT", "SWKS", "DLTR", "BIDU", "SIRI", "EBAY"
+]
+
 # --- UI Sidebar Layout Configurations ---
 st.sidebar.header("📁 Ticker List Settings")
-default_tickers = ["AAPL", "MSFT", "NVDA", "AMD", "SPY"]
+
+# Load default tickers: prefer watchlist2.csv if found, else fallback
+DEFAULT_FALLBACK = ["AAPL", "MSFT", "NVDA", "AMD", "SPY"]
+WATCHLIST2_PATH = "watchlist2.csv"
+
+default_tickers = DEFAULT_FALLBACK.copy()
+watchlist2_loaded = False
+
+if os.path.exists(WATCHLIST2_PATH):
+    try:
+        df_wl2 = pd.read_csv(WATCHLIST2_PATH).dropna(how='all')
+        if not df_wl2.empty:
+            parsed = df_wl2.iloc[:, 0].astype(str).str.strip().str.upper().tolist()
+            parsed = [t for t in parsed if t and t != 'NAN' and t != '']
+            if parsed:
+                default_tickers = parsed
+                watchlist2_loaded = True
+                st.sidebar.success(f"✅ Loaded default watchlist from **watchlist2.csv** ({len(default_tickers)} tickers)")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ watchlist2.csv found but could not be read: {e}")
+        st.sidebar.info("Falling back to built-in default tickers.")
+else:
+    st.sidebar.info("ℹ️ No watchlist2.csv found. Using built-in default tickers.")
+
 ticker_list = default_tickers.copy()
 
 uploaded_file = st.sidebar.file_uploader("Upload Tickers List CSV", type=["csv"])
@@ -186,16 +249,17 @@ if active_ticker:
             "Metric Category": [
                 "Moving Averages", "Moving Averages", "Moving Averages",
                 "Levels & Volatility", "Levels & Volatility", "Levels & Volatility", "Levels & Volatility",
-                "Volume Metrics"
+                "Volume Metrics", "Volume Metrics", "Volume Metrics"
             ],
             "Technical Indicator Name": [
                 "20-Day Simple Moving Average (SMA)", "50-Day Simple Moving Average (SMA)", "200-Day Simple Moving Average (SMA)",
-                "Volume Weighted Average Price (VWAP)", "Support Level (20-Day Local Low)", "Resistance Level (20-Day Local High)", "Average True Range (14-Day ATR)",
-                "Volume Spike Analysis"
+                "Support Level (20-Day Local Low)", "Resistance Level (20-Day Local High)", "Average True Range (14-Day ATR)", "Volume Weighted Average Price (VWAP)",
+                "Last Weekly Volume", "Avg Weekly Volume (12W)", "Volume Spike Analysis"
             ],
             "Calculated Value": [
                 f"${metrics['sma_20']:.2f}", f"${metrics['sma_50']:.2f}", f"${metrics['sma_200']:.2f}",
-                f"${metrics['vwap']:.2f}", f"${metrics['support']:.2f}", f"${metrics['resistance']:.2f}", f"${metrics['atr']:.2f}",
+                f"${metrics['support']:.2f}", f"${metrics['resistance']:.2f}", f"${metrics['atr']:.2f}", f"${metrics['vwap']:.2f}",
+                f"{metrics['last_weekly_volume']:,}", f"{metrics['avg_weekly_volume']:,}",
                 "🚨 Breakout Triggered!" if metrics['vol_breakout'] else "🟢 Standard Volume Ranges"
             ]
         })
@@ -306,15 +370,122 @@ if active_ticker:
 
         summary_df = generate_watchlist_summary(ticker_list)
         if not summary_df.empty:
-            def highlight_breakout(val):
-                if val == "🚨 YES":
-                    return 'background-color: #ff6b6b; color: white; font-weight: bold;'
-                return ''
+            # Fetch LTP for all tickers in summary
+            ltp_map = {}
+            for t in summary_df['Ticker'].tolist():
+                try:
+                    stock = yf.Ticker(t)
+                    hist = stock.history(period="1d")
+                    if not hist.empty:
+                        ltp_map[t] = float(hist['Close'].iloc[-1])
+                except:
+                    ltp_map[t] = None
 
-            styled_summary = summary_df.style.map(highlight_breakout, subset=['Vol Breakout'])
+            def apply_section3_styling(df):
+                styles = pd.DataFrame('', index=df.index, columns=df.columns)
+
+                for idx in df.index:
+                    ticker = df.loc[idx, 'Ticker']
+                    ltp = ltp_map.get(ticker)
+
+                    if ltp is not None:
+                        price = df.loc[idx, 'Price ($)']
+                        # Color Price row based on LTP comparison
+                        if price < ltp:
+                            styles.loc[idx, 'Price ($)'] = 'color: #ff6b6b; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Price ($)'] = 'color: #10ac84; font-weight: bold;'
+
+                    # Light background for % columns
+                    for col in ['Daily Chg (%)', 'Weekly Chg (%)', 'YTD Chg (%)']:
+                        val = df.loc[idx, col]
+                        if val > 0:
+                            styles.loc[idx, col] = 'background-color: #d4edda; color: #155724; font-weight: 600;'
+                        elif val < 0:
+                            styles.loc[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: 600;'
+                        else:
+                            styles.loc[idx, col] = 'background-color: #fff3cd; color: #856404; font-weight: 600;'
+
+                    # Bold text for VWAP and ATR
+                    styles.loc[idx, 'VWAP ($)'] = 'font-weight: bold; color: #6c5ce7;'
+                    styles.loc[idx, 'ATR ($)'] = 'font-weight: bold; color: #e17055;'
+
+                    # Breakout styling
+                    if df.loc[idx, 'Vol Breakout'] == "🚨 YES":
+                        styles.loc[idx, 'Vol Breakout'] = 'background-color: #ff6b6b; color: white; font-weight: bold;'
+
+                return styles
+
+            styled_summary = summary_df.style.apply(apply_section3_styling, axis=None)
             st.dataframe(styled_summary, use_container_width=True, hide_index=True)
         else:
             st.warning("No watchlist data available for summary generation.")
+
+        st.markdown("---")
+
+        # SEQUENCE 4: NASDAQ 100 Breakout Screener
+        st.subheader("📋 4. NASDAQ 100 — Breakout Screener (Ordered by Status)")
+
+        with st.spinner("Fetching NASDAQ 100 data... This may take a moment."):
+            nasdaq_df = generate_watchlist_summary(NASDAQ_100_TICKERS)
+
+        if not nasdaq_df.empty:
+            # Sort: Breakout stocks first, then by Price descending
+            nasdaq_df['Breakout_Sort'] = nasdaq_df['Vol Breakout'].apply(lambda x: 0 if x == "🚨 YES" else 1)
+            nasdaq_df = nasdaq_df.sort_values(by=['Breakout_Sort', 'Price ($)'], ascending=[True, False]).drop(columns=['Breakout_Sort'])
+            nasdaq_df = nasdaq_df.reset_index(drop=True)
+
+            # Get LTP (Last Traded Price) for each ticker to compare with VWAP
+            nasdaq_ltp_map = {}
+            for t in nasdaq_df['Ticker'].tolist():
+                try:
+                    stock = yf.Ticker(t)
+                    hist = stock.history(period="1d")
+                    if not hist.empty:
+                        nasdaq_ltp_map[t] = float(hist['Close'].iloc[-1])
+                except:
+                    nasdaq_ltp_map[t] = None
+
+            def apply_nasdaq_styling(df):
+                styles = pd.DataFrame('', index=df.index, columns=df.columns)
+
+                for idx in df.index:
+                    ticker = df.loc[idx, 'Ticker']
+                    ltp = nasdaq_ltp_map.get(ticker)
+
+                    if ltp is not None:
+                        price = df.loc[idx, 'Price ($)']
+                        # Color Price row based on LTP comparison
+                        if price < ltp:
+                            styles.loc[idx, 'Price ($)'] = 'color: #ff6b6b; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Price ($)'] = 'color: #10ac84; font-weight: bold;'
+
+                    # Light background for % columns
+                    for col in ['Daily Chg (%)', 'Weekly Chg (%)', 'YTD Chg (%)']:
+                        val = df.loc[idx, col]
+                        if val > 0:
+                            styles.loc[idx, col] = 'background-color: #d4edda; color: #155724; font-weight: 600;'
+                        elif val < 0:
+                            styles.loc[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: 600;'
+                        else:
+                            styles.loc[idx, col] = 'background-color: #fff3cd; color: #856404; font-weight: 600;'
+
+                    # Bold text for VWAP and ATR
+                    styles.loc[idx, 'VWAP ($)'] = 'font-weight: bold; color: #6c5ce7;'
+                    styles.loc[idx, 'ATR ($)'] = 'font-weight: bold; color: #e17055;'
+
+                    # Breakout styling
+                    if df.loc[idx, 'Vol Breakout'] == "🚨 YES":
+                        styles.loc[idx, 'Vol Breakout'] = 'background-color: #ff6b6b; color: white; font-weight: bold;'
+
+                return styles
+
+            styled_nasdaq = nasdaq_df.style.apply(apply_nasdaq_styling, axis=None)
+            st.dataframe(styled_nasdaq, use_container_width=True, hide_index=True)
+            st.caption(f"Showing {len(nasdaq_df)} NASDAQ 100 stocks | 🚨 Breakout stocks listed first | Price colored vs real-time LTP")
+        else:
+            st.warning("Unable to fetch NASDAQ 100 data. Please check your connection.")
 
     else:
         st.error(f"❌ Unable to fetch sufficient data for **{active_ticker}**. Please verify the ticker symbol.")
