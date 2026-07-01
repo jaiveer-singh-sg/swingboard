@@ -1,0 +1,785 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import os
+
+# Set page to wide layout
+st.set_page_config(layout="wide", page_title="Multi-Ticker Financial Dashboard v2.1 — NSE India")
+
+# 1. Fetch System-Wide Market Context (India VIX Status)
+@st.cache_data(ttl=300)
+def get_vix_data():
+    try:
+        vix = yf.Ticker("^INDIAVIX").history(period="1mo")
+        if not vix.empty and len(vix) >= 2:
+            current_vix = vix['Close'].iloc[-1]
+            vix_change = ((vix['Close'].iloc[-1] - vix['Close'].iloc[-2]) / vix['Close'].iloc[-2]) * 100
+            return current_vix, vix_change
+    except Exception:
+        pass
+    return 0.0, 0.0
+
+# 2. Extract Full Company Name Profile safely
+@st.cache_data(ttl=3600)
+def get_company_full_name(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        if hasattr(stock, 'info') and stock.info and "longName" in stock.info:
+            return stock.info["longName"]
+    except Exception:
+        pass
+    return f"{ticker} Corporation"
+
+# Helper: Fetch Beta from yfinance info
+@st.cache_data(ttl=3600)
+def get_beta(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        if hasattr(stock, 'info') and stock.info and "beta" in stock.info:
+            beta = stock.info["beta"]
+            if beta is not None and not pd.isna(beta):
+                return float(beta)
+    except Exception:
+        pass
+    return None
+
+# Helper: Fetch Mean Price Target from yfinance info
+@st.cache_data(ttl=3600)
+def get_mean_price_target(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        if hasattr(stock, 'info') and stock.info:
+            # Try multiple possible field names for analyst price targets
+            for key in ["targetMeanPrice", "target_mean_price", "meanPriceTarget", "mean_price_target"]:
+                if key in stock.info and stock.info[key] is not None and not pd.isna(stock.info[key]):
+                    return float(stock.info[key])
+    except Exception:
+        pass
+    return None
+
+# 3. Fetch and Process Ticker Technical Data
+@st.cache_data(ttl=300)
+def get_ticker_dashboard(ticker):
+    try:
+        stock = yf.Ticker(ticker)
+        df = stock.history(period="1y")
+        if df.empty or len(df) < 200:
+            return None, None
+
+        df = df.dropna(subset=['Open', 'High', 'Low', 'Close']).copy()
+
+        # Compute Moving Averages
+        df['SMA_20'] = ta.sma(df['Close'], length=20)
+        df['SMA_50'] = ta.sma(df['Close'], length=50)
+        df['SMA_200'] = ta.sma(df['Close'], length=200)
+
+        # Momentum Indicators
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        df['MACD_Line'] = ta.ema(df['Close'], length=12) - ta.ema(df['Close'], length=26)
+        df['Signal_Line'] = ta.ema(df['MACD_Line'], length=9)
+        df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
+
+        try:
+            df['VWAP'] = ta.vwap(df['High'], df['Low'], df['Close'], df['Volume'])
+        except Exception:
+            df['VWAP'] = df['Close']
+
+        df['Vol_SMA20'] = ta.sma(df['Volume'], length=20)
+        df['Vol_SMA20'] = df['Vol_SMA20'].ffill().bfill()
+        df['Vol_Breakout'] = df['Volume'] > (df['Vol_SMA20'] * 1.5)
+
+        df['Resistance'] = df['High'].rolling(window=20).max()
+        df['Support'] = df['Low'].rolling(window=20).min()
+
+        # Weekly volume metrics
+        df['Week'] = df.index.isocalendar().week
+        df['Year'] = df.index.year
+        df['YearWeek'] = df['Year'].astype(str) + '-W' + df['Week'].astype(str).str.zfill(2)
+
+        # Last complete week volume
+        last_week = df['YearWeek'].iloc[-1]
+        last_week_data = df[df['YearWeek'] == last_week]
+        last_weekly_volume = int(last_week_data['Volume'].sum()) if not last_week_data.empty else 0
+
+        # Average weekly volume (last 12 weeks)
+        unique_weeks = df['YearWeek'].unique()
+        if len(unique_weeks) >= 2:
+            recent_weeks = unique_weeks[-12:] if len(unique_weeks) >= 12 else unique_weeks
+            weekly_volumes = []
+            for w in recent_weeks:
+                w_data = df[df['YearWeek'] == w]
+                if not w_data.empty:
+                    weekly_volumes.append(int(w_data['Volume'].sum()))
+            avg_weekly_volume = int(sum(weekly_volumes) / len(weekly_volumes)) if weekly_volumes else 0
+        else:
+            avg_weekly_volume = last_weekly_volume
+
+        df = df.ffill().bfill()
+
+        current_price = float(df['Close'].iloc[-1])
+
+        # Index-proof YTD computation block matrix
+        current_year = pd.Timestamp.now().year
+        ytd_df = df[df.index.year == current_year]
+        ytd_change = 0.0
+        if not ytd_df.empty:
+            for i in range(len(ytd_df)):
+                base_close = ytd_df['Close'].iloc[i]
+                if pd.notna(base_close) and base_close > 0:
+                    ytd_change = ((current_price - float(base_close)) / float(base_close)) * 100
+                    break
+
+        daily_change = ((current_price - float(df['Close'].iloc[-2])) / float(df['Close'].iloc[-2])) * 100
+        weekly_change = ((current_price - float(df['Close'].iloc[-5])) / float(df['Close'].iloc[-5])) * 100
+
+        # Fetch Beta
+        beta_val = get_beta(ticker)
+
+        # Fetch Mean Price Target
+        mean_target = get_mean_price_target(ticker)
+
+        metrics = {
+            "price": current_price,
+            "daily_change": daily_change,
+            "weekly_change": weekly_change,
+            "ytd_change": ytd_change,
+            "rsi": float(df['RSI'].iloc[-1]) if not pd.isna(df['RSI'].iloc[-1]) else 50.0,
+            "atr": float(df['ATR'].iloc[-1]) if not pd.isna(df['ATR'].iloc[-1]) else 0.0,
+            "vol_breakout": bool(df['Vol_Breakout'].iloc[-1]),
+            "support": float(df['Support'].iloc[-1]),
+            "resistance": float(df['Resistance'].iloc[-1]),
+            "vwap": float(df['VWAP'].iloc[-1]),
+            "sma_20": float(df['SMA_20'].iloc[-1]),
+            "sma_50": float(df['SMA_50'].iloc[-1]),
+            "sma_200": float(df['SMA_200'].iloc[-1]),
+            "last_weekly_volume": last_weekly_volume,
+            "avg_weekly_volume": avg_weekly_volume,
+            "beta": beta_val,
+            "mean_target": mean_target
+        }
+        return df, metrics
+    except Exception:
+        return None, None
+
+# 4. Compile Summary Table for All Watchlist Tickers
+def generate_watchlist_summary(tickers):
+    summary_data = []
+    for t in tickers:
+        try:
+            df_t, metrics = get_ticker_dashboard(t)
+            if metrics is not None and df_t is not None:
+                summary_data.append({
+                    "Ticker": t,
+                    "Price (₹)": round(metrics["price"], 1),
+                    "Daily Chg (%)": round(metrics["daily_change"], 1),
+                    "Weekly Chg (%)": round(metrics["weekly_change"], 1),
+                    "YTD Chg (%)": round(metrics["ytd_change"], 1),
+                    "RSI (14)": round(metrics["rsi"], 1),
+                    "20 SMA (₹)": round(metrics["sma_20"], 1),
+                    "50 SMA (₹)": round(metrics["sma_50"], 1),
+                    "200 SMA (₹)": round(metrics["sma_200"], 1),
+                    "Support (₹)": round(metrics["support"], 1),
+                    "Resistance (₹)": round(metrics["resistance"], 1),
+                    "Last Wk Vol": metrics["last_weekly_volume"],
+                    "Avg Wk Vol": metrics["avg_weekly_volume"],
+                    "VWAP (₹)": round(metrics["vwap"], 1),
+                    "ATR (₹)": round(metrics["atr"], 1),
+                    "Beta": round(metrics["beta"], 1) if metrics["beta"] is not None else "N/A",
+                    "Mean Target (₹)": round(metrics["mean_target"], 1) if metrics["mean_target"] is not None else "N/A",
+                    "Vol Breakout": "🚨 YES" if metrics["vol_breakout"] else "🟢 No"
+                })
+        except Exception:
+            pass
+    return pd.DataFrame(summary_data)
+
+# NIFTY 50 tickers (NSE India)
+NIFTY_50_TICKERS = [
+    "RELIANCE", "HDFCBANK", "BHARTIARTL", "ICICIBANK", "SBIN", "TCS", "BAJFINANCE", "LT",
+    "HINDUNILVR", "SUNPHARMA", "AXISBANK", "MARUTI", "INFY", "ADANIPORTS", "ADANIENT",
+    "KOTAKBANK", "TITAN", "M&M", "ITC", "NTPC", "POWERGRID", "ONGC", "HCLTECH", "WIPRO",
+    "TECHM", "BAJAJFINSV", "ASIANPAINT", "NESTLEIND", "JSWSTEEL", "TATAMOTORS", "ULTRACEMCO",
+    "COALINDIA", "GRASIM", "CIPLA", "DRREDDY", "TATASTEEL", "BPCL", "HEROMOTOCO", "BRITANNIA",
+    "EICHERMOT", "APOLLOHOSP", "DIVISLAB", "HDFCLIFE", "SBILIFE", "INDUSINDBK", "TATACONSUM",
+    "UPL", "BAJAJ-AUTO", "SHRIRAMFIN", "HINDALCO"
+]
+
+# --- UI Sidebar Layout Configurations ---
+st.sidebar.header("📁 Ticker List Settings")
+
+# Load default tickers: prefer watchlist-nse.csv if found, else fallback
+DEFAULT_FALLBACK = ["RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "MCX.NS", "SGFIN.NS","AWL.NS","ACLD.NS"]
+WATCHLIST1_PATH = "watchlist1-nse.csv"
+
+default_tickers = DEFAULT_FALLBACK.copy()
+watchlist1_loaded = False
+
+if os.path.exists(WATCHLIST1_PATH):
+    try:
+        df_wl2 = pd.read_csv(WATCHLIST1_PATH).dropna(how='all')
+        if not df_wl2.empty:
+            parsed = df_wl2.iloc[:, 0].astype(str).str.strip().str.upper().tolist()
+            parsed = [t for t in parsed if t and t != 'NAN' and t != '']
+            if parsed:
+                default_tickers = parsed
+                watchlist1_loaded = True
+                st.sidebar.success(f"✅ Loaded default watchlist from **watchlist1-nse.csv** ({len(default_tickers)} tickers)")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ watchlist1-nse.csv found but could not be read: {e}")
+        st.sidebar.info("Falling back to built-in default tickers.")
+else:
+    st.sidebar.info("ℹ️ No watchlist1-nse.csv found. Using built-in default tickers.")
+
+ticker_list = default_tickers.copy()
+
+uploaded_file = st.sidebar.file_uploader("Upload Tickers List CSV", type=["csv"])
+if uploaded_file is not None:
+    try:
+        df_uploaded = pd.read_csv(uploaded_file).dropna(how='all')
+        if not df_uploaded.empty:
+            parsed_tickers = df_uploaded.iloc[:, 0].astype(str).str.strip().str.upper().tolist()
+            parsed_tickers = [t for t in parsed_tickers if t and t != 'NAN' and t != '']
+            if parsed_tickers:
+                ticker_list = parsed_tickers
+                st.sidebar.success(f"Loaded {len(ticker_list)} custom tickers!")
+    except Exception as e:
+        st.sidebar.error(f"Error: {e}")
+
+selected_ticker = st.sidebar.selectbox("Select Asset Ticker to Analyse:", options=ticker_list)
+manual_add = st.sidebar.text_input("Or query a ticker manually:").strip().upper()
+active_ticker = manual_add if manual_add else selected_ticker
+
+vix_val, vix_pct = get_vix_data()
+st.sidebar.markdown("---")
+st.sidebar.header("⚠️ India VIX Status")
+st.sidebar.metric(label="India Volatility Index (VIX)", value=f"{vix_val:.1f}", delta=f"{vix_pct:.1f}%")
+
+# --- Main App Presentation Screen ---
+full_company_name = get_company_full_name(active_ticker)
+st.title(f"📊 Financial Intelligence Workspace — {full_company_name}")
+
+if active_ticker:
+    df, metrics = get_ticker_dashboard(active_ticker)
+
+    if df is not None:
+        # Top Card Metrics Row Elements
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        m_col1.metric("Current Price", f"₹{metrics['price']:.1f}", f"Daily: {metrics['daily_change']:.1f}%")
+        m_col2.metric("Weekly Trend", f"{metrics['weekly_change']:.1f}%")
+        m_col3.metric("YTD Performance", f"{metrics['ytd_change']:.1f}%")
+
+        rsi_val = metrics['rsi']
+        rsi_status = "Normal"
+        if rsi_val >= 70: rsi_status = "Overbought"
+        elif rsi_val <= 30: rsi_status = "Oversold"
+        m_col4.metric("RSI (14-Day)", f"{rsi_val:.1f}", f"Status: {rsi_status}")
+
+        st.markdown("---")
+
+        # SEQUENCE 1: Snapshot table view block layout
+        st.subheader(f"📋 1. Active Ticker Technical Snapshot ({active_ticker})")
+
+        snapshot_df = pd.DataFrame({
+            "Metric Category": [
+                "Moving Averages", "Moving Averages", "Moving Averages",
+                "Levels & Volatility", "Levels & Volatility", "Levels & Volatility", "Levels & Volatility", "Levels & Volatility", "Levels & Volatility",
+                "Volume Metrics", "Volume Metrics", "Volume Metrics"
+            ],
+            "Technical Indicator Name": [
+                "20-Day Simple Moving Average (SMA)", "50-Day Simple Moving Average (SMA)", "200-Day Simple Moving Average (SMA)",
+                "Support Level (20-Day Local Low)", "Resistance Level (20-Day Local High)", "Average True Range (14-Day ATR)", "Volume Weighted Average Price (VWAP)", "Beta", "Mean Price Target",
+                "Last Weekly Volume", "Avg Weekly Volume (12W)", "Volume Spike Analysis"
+            ],
+            "Calculated Value": [
+                f"₹{metrics['sma_20']:.1f}", f"₹{metrics['sma_50']:.1f}", f"₹{metrics['sma_200']:.1f}",
+                f"₹{metrics['support']:.1f}", f"₹{metrics['resistance']:.1f}", f"₹{metrics['atr']:.1f}", f"₹{metrics['vwap']:.1f}",
+                f"{metrics['beta']:.1f}" if metrics['beta'] is not None else "N/A",
+                f"₹{metrics['mean_target']:.1f}" if metrics['mean_target'] is not None else "N/A",
+                f"{metrics['last_weekly_volume']:,}", f"{metrics['avg_weekly_volume']:,}",
+                "🚨 Breakout Triggered!" if metrics['vol_breakout'] else "🟢 Standard Volume Ranges"
+            ]
+        })
+
+        def style_category(val):
+            if val == "Moving Averages": return 'color: #ff9f43; font-weight: bold;'
+            elif val == "Levels & Volatility": return 'color: #54a0ff; font-weight: bold;'
+            elif val == "Volume Metrics": return 'color: #10ac84; font-weight: bold;'
+            return ''
+
+        st.dataframe(snapshot_df.style.map(style_category, subset=['Metric Category']), use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        # SEQUENCE 2: Technical Chart Plotly workspace layout
+        st.subheader("📈 2. Interactive Technical Analysis Trend Plots")
+
+        plot_dates = df.index.strftime('%Y-%m-%d').tolist()
+
+        fig = make_subplots(
+            rows=3, cols=1, 
+            shared_xaxes=True, 
+            vertical_spacing=0.06, 
+            row_heights=[0.5, 0.23, 0.27],
+            subplot_titles=("Price Action & Moving Averages", "Volume Profile", "MACD & RSI Momentum")
+        )
+
+        # Row 1: Price + Candlestick + MAs + Support/Resistance
+        fig.add_trace(go.Candlestick(
+            x=plot_dates, 
+            open=df['Open'], 
+            high=df['High'], 
+            low=df['Low'], 
+            close=df['Close'], 
+            name="Price Candle",
+            increasing_line_color='#10ac84',
+            decreasing_line_color='#ff6b6b'
+        ), row=1, col=1)
+
+        fig.add_trace(go.Scatter(x=plot_dates, y=df['SMA_20'], name="20 SMA", line=dict(color='orange', width=1.5)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_dates, y=df['SMA_50'], name="50 SMA", line=dict(color='blue', width=1.5)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_dates, y=df['SMA_200'], name="200 SMA", line=dict(color='red', width=1.5, dash='dash')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=plot_dates, y=df['VWAP'], name="VWAP", line=dict(color='purple', width=1.5, dash='dot')), row=1, col=1)
+
+        # Support & Resistance as horizontal reference bands
+        fig.add_trace(go.Scatter(
+            x=plot_dates, y=df['Support'], 
+            name="Support", line=dict(color='green', width=1, dash='dash'), 
+            opacity=0.5, showlegend=True
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=plot_dates, y=df['Resistance'], 
+            name="Resistance", line=dict(color='red', width=1, dash='dash'), 
+            opacity=0.5, showlegend=True
+        ), row=1, col=1)
+
+        # Row 2: Volume + Volume SMA
+        colors = ['#10ac84' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#ff6b6b' for i in range(len(df))]
+        fig.add_trace(go.Bar(
+            x=plot_dates, y=df['Volume'], name="Volume", 
+            marker_color=colors, opacity=0.7
+        ), row=2, col=1)
+        fig.add_trace(go.Scatter(
+            x=plot_dates, y=df['Vol_SMA20'], name="Vol SMA 20", 
+            line=dict(color='white', width=1.5)
+        ), row=2, col=1)
+
+        # Row 3: MACD (top of row 3) + RSI (bottom of row 3)
+        # We use a secondary y-axis for RSI within row 3
+        fig.add_trace(go.Scatter(x=plot_dates, y=df['MACD_Line'], name="MACD Line", line=dict(color='blue', width=1.5)), row=3, col=1)
+        fig.add_trace(go.Scatter(x=plot_dates, y=df['Signal_Line'], name="Signal Line", line=dict(color='orange', width=1.5)), row=3, col=1)
+        fig.add_trace(go.Bar(x=plot_dates, y=df['MACD_Line'] - df['Signal_Line'], name="MACD Histogram", marker_color='gray', opacity=0.5), row=3, col=1)
+
+        # RSI on secondary y-axis for row 3
+        fig.add_trace(go.Scatter(
+            x=plot_dates, y=df['RSI'], name="RSI (14)", 
+            line=dict(color='magenta', width=1.5),
+            yaxis='y4'
+        ))
+
+        # Layout configuration
+        fig.update_layout(
+            title=f"{active_ticker} — Full Technical Chart",
+            xaxis_rangeslider_visible=False,
+            height=900,
+            template="plotly_dark",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            hovermode='x unified',
+            yaxis4=dict(
+                title="RSI",
+                overlaying='y3',
+                side='right',
+                range=[0, 100],
+                showgrid=False
+            )
+        )
+
+        # Add RSI reference lines
+        fig.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5, row=3, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5, row=3, col=1)
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("---")
+
+        # SEQUENCE 3: Watchlist Summary Table
+        st.subheader("📋 3. Full Watchlist Comparative Summary")
+
+        summary_df = generate_watchlist_summary(ticker_list)
+        if not summary_df.empty:
+            # Fetch LTP for all tickers in summary
+            ltp_map = {}
+            for t in summary_df['Ticker'].tolist():
+                try:
+                    stock = yf.Ticker(t)
+                    hist = stock.history(period="1d")
+                    if not hist.empty:
+                        ltp_map[t] = float(hist['Close'].iloc[-1])
+                except:
+                    ltp_map[t] = None
+
+            def format_volume_millions(val):
+                """Format volume in millions (e.g. 1.4 M)"""
+                if pd.isna(val) or val == 0:
+                    return "0.0 M"
+                return f"{val / 1_000_000:.1f} M"
+
+            def get_price_shade_color(value, price, max_diff):
+                """
+                Return a color shade based on how far the value is from price.
+                Higher difference = darker shade.
+                """
+                if pd.isna(value) or pd.isna(price) or price == 0:
+                    return 'color: #888888;'
+                diff = abs(value - price)
+                # Normalize diff against max_diff to get intensity 0-1
+                if max_diff <= 0:
+                    intensity = 0
+                else:
+                    intensity = min(diff / max_diff, 1.0)
+
+                # Interpolate between light gray and dark black/charcoal
+                # Start: #888888 (light gray), End: #1a1a1a (very dark)
+                r = int(136 - intensity * (136 - 26))  # 136 -> 26
+                g = int(136 - intensity * (136 - 26))
+                b = int(136 - intensity * (136 - 26))
+
+                return f'color: rgb({r},{g},{b}); font-weight: bold;'
+
+            def apply_section3_styling(df):
+                styles = pd.DataFrame('', index=df.index, columns=df.columns)
+
+                # Compute max differences for SMA/Support/Resistance columns for shade scaling
+                price_col = df['Price (₹)']
+
+                # SMA columns shade
+                sma_cols = ['20 SMA (₹)', '50 SMA (₹)', '200 SMA (₹)']
+                for col in sma_cols:
+                    max_diff = (df[col] - price_col).abs().max()
+                    for idx in df.index:
+                        styles.loc[idx, col] = get_price_shade_color(df.loc[idx, col], df.loc[idx, 'Price (₹)'], max_diff)
+
+                # Support & Resistance shade
+                sr_cols = ['Support (₹)', 'Resistance (₹)']
+                for col in sr_cols:
+                    max_diff = (df[col] - price_col).abs().max()
+                    for idx in df.index:
+                        styles.loc[idx, col] = get_price_shade_color(df.loc[idx, col], df.loc[idx, 'Price (₹)'], max_diff)
+
+                for idx in df.index:
+                    ticker = df.loc[idx, 'Ticker']
+                    ltp = ltp_map.get(ticker)
+
+                    if ltp is not None:
+                        price = df.loc[idx, 'Price (₹)']
+                        # Color Price row based on LTP comparison
+                        if price < ltp:
+                            styles.loc[idx, 'Price (₹)'] = 'color: #ff6b6b; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Price (₹)'] = 'color: #10ac84; font-weight: bold;'
+
+                    # Light background for % columns
+                    for col in ['Daily Chg (%)', 'Weekly Chg (%)', 'YTD Chg (%)']:
+                        val = df.loc[idx, col]
+                        if val > 0:
+                            styles.loc[idx, col] = 'background-color: #d4edda; color: #155724; font-weight: 600;'
+                        elif val < 0:
+                            styles.loc[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: 600;'
+                        else:
+                            styles.loc[idx, col] = 'background-color: #fff3cd; color: #856404; font-weight: 600;'
+
+                    # RSI coloring: Red when above 70 or below 30
+                    rsi_val = df.loc[idx, 'RSI (14)']
+                    if rsi_val > 70 or rsi_val < 30:
+                        styles.loc[idx, 'RSI (14)'] = 'color: #dc3545; font-weight: bold;'
+                    else:
+                        styles.loc[idx, 'RSI (14)'] = 'color: #28a745;'
+
+                    # Volume columns: Green if Last Wk Vol > Avg Wk Vol
+                    last_vol = df.loc[idx, 'Last Wk Vol']
+                    avg_vol = df.loc[idx, 'Avg Wk Vol']
+                    if last_vol > avg_vol:
+                        styles.loc[idx, 'Last Wk Vol'] = 'color: #10ac84; font-weight: bold;'
+                    else:
+                        styles.loc[idx, 'Last Wk Vol'] = 'color: #ff6b6b;'
+
+                    styles.loc[idx, 'Avg Wk Vol'] = 'color: #54a0ff;'
+
+                    # Bold text for VWAP and ATR
+                    styles.loc[idx, 'VWAP (₹)'] = 'font-weight: bold; color: #6c5ce7;'
+                    styles.loc[idx, 'ATR (₹)'] = 'font-weight: bold; color: #e17055;'
+
+                    # Beta styling
+                    beta_val = df.loc[idx, 'Beta']
+                    if isinstance(beta_val, (int, float)):
+                        if beta_val > 1.2:
+                            styles.loc[idx, 'Beta'] = 'color: #dc3545; font-weight: bold;'
+                        elif beta_val < 0.8:
+                            styles.loc[idx, 'Beta'] = 'color: #10ac84; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Beta'] = 'color: #fdcb6e; font-weight: bold;'
+                    else:
+                        styles.loc[idx, 'Beta'] = 'color: #888888;'
+
+                    # Mean Target styling: Green if target > price, Red if target < price
+                    target_val = df.loc[idx, 'Mean Target (₹)']
+                    if isinstance(target_val, (int, float)):
+                        price = df.loc[idx, 'Price (₹)']
+                        if target_val > price:
+                            styles.loc[idx, 'Mean Target (₹)'] = 'color: #10ac84; font-weight: bold;'
+                        elif target_val < price:
+                            styles.loc[idx, 'Mean Target (₹)'] = 'color: #ff6b6b; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Mean Target (₹)'] = 'color: #fdcb6e; font-weight: bold;'
+                    else:
+                        styles.loc[idx, 'Mean Target (₹)'] = 'color: #888888;'
+
+                    # Breakout styling
+                    if df.loc[idx, 'Vol Breakout'] == "🚨 YES":
+                        styles.loc[idx, 'Vol Breakout'] = 'background-color: #ff6b6b; color: white; font-weight: bold;'
+
+                return styles
+
+            # Format volume columns to millions for display
+            display_df = summary_df.copy()
+            display_df['Last Wk Vol'] = display_df['Last Wk Vol'].apply(format_volume_millions)
+            display_df['Avg Wk Vol'] = display_df['Avg Wk Vol'].apply(format_volume_millions)
+
+            styled_summary = display_df.style.apply(apply_section3_styling, axis=None)
+            st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+        else:
+            st.warning("No watchlist data available for summary generation.")
+
+        # --- Color Legend for Section 3 ---
+        st.markdown("---")
+        st.markdown("**📊 Color Legend:**")
+        price_legend_col1, pct_legend_col2, rsi_legend_col3, vol_legend_col4, vwap_atr_legend_col5 = st.columns(5)
+        with price_legend_col1:
+            st.markdown("🟢 <span style='color:#10ac84'>**Price ≥ LTP**</span>", unsafe_allow_html=True)
+            st.markdown("🔴 <span style='color:#ff6b6b'>**Price < LTP**</span>", unsafe_allow_html=True)
+        with pct_legend_col2:
+            st.markdown("🟢 <span style='color:#155724'>**Positive % Change**</span>", unsafe_allow_html=True)
+            st.markdown("🔴 <span style='color:#721c24'>**Negative % Change**</span>", unsafe_allow_html=True)
+        with rsi_legend_col3:
+            st.markdown("🔴 <span style='color:#dc3545'>**RSI > 70 or < 30**</span>", unsafe_allow_html=True)
+            st.markdown("🟢 <span style='color:#28a745'>**RSI Normal (30-70)**</span>", unsafe_allow_html=True)
+        with vol_legend_col4:
+            st.markdown("🟢 <span style='color:#10ac84'>**Last Wk Vol > Avg**</span>", unsafe_allow_html=True)
+            st.markdown("🔴 <span style='color:#ff6b6b'>**Last Wk Vol ≤ Avg**</span>", unsafe_allow_html=True)
+        with vwap_atr_legend_col5:
+            st.markdown("🟣 <span style='color:#6c5ce7'>**VWAP**</span>", unsafe_allow_html=True)
+            st.markdown("🟠 <span style='color:#e17055'>**ATR**</span>", unsafe_allow_html=True)
+        st.markdown("*SMA/Support/Resistance shades: Darker = farther from current price*")
+        st.markdown("🔴 **Beta > 1.2 (High Volatility)** | 🟡 **Beta 0.8–1.2 (Moderate)** | 🟢 **Beta < 0.8 (Low Volatility)**")
+        st.markdown("🟢 **Mean Target > Price (Upside)** | 🔴 **Mean Target < Price (Downside)** | 🟡 **Mean Target = Price**")
+
+        st.markdown("---")
+
+        # SEQUENCE 4: NIFTY 50 Breakout Screener
+        st.subheader("📋 4. NIFTY 50 — Breakout Screener")
+
+        # CSV upload for NIFTY tickers
+        nifty_csv = st.file_uploader("📁 Upload NSE Stocks CSV (optional)", type=["csv"], key="nifty_csv_upload")
+
+        nifty_tickers = NIFTY_50_TICKERS.copy()
+        if nifty_csv is not None:
+            try:
+                df_nifty_upload = pd.read_csv(nifty_csv).dropna(how='all')
+                if not df_nifty_upload.empty:
+                    parsed_nifty = df_nifty_upload.iloc[:, 0].astype(str).str.strip().str.upper().tolist()
+                    parsed_nifty = [t for t in parsed_nifty if t and t != 'NAN' and t != '']
+                    if parsed_nifty:
+                        nifty_tickers = parsed_nifty
+                        st.success(f"Loaded {len(nifty_tickers)} tickers from uploaded NSE CSV!")
+            except Exception as e:
+                st.error(f"Error reading NSE CSV: {e}")
+
+        # Show Analysis button with session state persistence
+        if 'show_nifty_analysis' not in st.session_state:
+            st.session_state.show_nifty_analysis = False
+
+        def toggle_nifty_analysis():
+            st.session_state.show_nifty_analysis = True
+
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            st.button("▶️ Show Analysis", on_click=toggle_nifty_analysis, type="primary", use_container_width=True)
+        with col_btn2:
+            if st.session_state.show_nifty_analysis:
+                st.button("🔄 Refresh", on_click=toggle_nifty_analysis, type="secondary")
+
+        if st.session_state.show_nifty_analysis:
+            with st.spinner("Fetching NSE data... This may take a moment."):
+                nifty_df = generate_watchlist_summary(nifty_tickers)
+
+            if not nifty_df.empty:
+                # Sort: Breakout stocks first, then by Price descending
+                nifty_df['Breakout_Sort'] = nifty_df['Vol Breakout'].apply(lambda x: 0 if x == "🚨 YES" else 1)
+                nifty_df = nifty_df.sort_values(by=['Breakout_Sort', 'Price (₹)'], ascending=[True, False]).drop(columns=['Breakout_Sort'])
+                nifty_df = nifty_df.reset_index(drop=True)
+
+                # Get LTP (Last Traded Price) for each ticker to compare with VWAP
+                nifty_ltp_map = {}
+                for t in nifty_df['Ticker'].tolist():
+                    try:
+                        stock = yf.Ticker(t)
+                        hist = stock.history(period="1d")
+                        if not hist.empty:
+                            nifty_ltp_map[t] = float(hist['Close'].iloc[-1])
+                    except:
+                        nifty_ltp_map[t] = None
+
+                def get_price_shade_color_nifty(value, price, max_diff):
+                    """
+                    Return a color shade based on how far the value is from price.
+                    Higher difference = darker shade.
+                    """
+                    if pd.isna(value) or pd.isna(price) or price == 0:
+                        return 'color: #888888;'
+                    diff = abs(value - price)
+                    if max_diff <= 0:
+                        intensity = 0
+                    else:
+                        intensity = min(diff / max_diff, 1.0)
+
+                    r = int(136 - intensity * (136 - 26))
+                    g = int(136 - intensity * (136 - 26))
+                    b = int(136 - intensity * (136 - 26))
+
+                    return f'color: rgb({r},{g},{b}); font-weight: bold;'
+
+                def apply_nifty_styling(df):
+                    styles = pd.DataFrame('', index=df.index, columns=df.columns)
+
+                    price_col = df['Price (₹)']
+
+                    # SMA columns shade
+                    sma_cols = ['20 SMA (₹)', '50 SMA (₹)', '200 SMA (₹)']
+                    for col in sma_cols:
+                        max_diff = (df[col] - price_col).abs().max()
+                        for idx in df.index:
+                            styles.loc[idx, col] = get_price_shade_color_nifty(df.loc[idx, col], df.loc[idx, 'Price (₹)'], max_diff)
+
+                    # Support & Resistance shade
+                    sr_cols = ['Support (₹)', 'Resistance (₹)']
+                    for col in sr_cols:
+                        max_diff = (df[col] - price_col).abs().max()
+                        for idx in df.index:
+                            styles.loc[idx, col] = get_price_shade_color_nifty(df.loc[idx, col], df.loc[idx, 'Price (₹)'], max_diff)
+
+                    for idx in df.index:
+                        ticker = df.loc[idx, 'Ticker']
+                        ltp = nifty_ltp_map.get(ticker)
+
+                        if ltp is not None:
+                            price = df.loc[idx, 'Price (₹)']
+                            # Color Price row based on LTP comparison
+                            if price < ltp:
+                                styles.loc[idx, 'Price (₹)'] = 'color: #ff6b6b; font-weight: bold;'
+                            else:
+                                styles.loc[idx, 'Price (₹)'] = 'color: #10ac84; font-weight: bold;'
+
+                        # Light background for % columns
+                        for col in ['Daily Chg (%)', 'Weekly Chg (%)', 'YTD Chg (%)']:
+                            val = df.loc[idx, col]
+                            if val > 0:
+                                styles.loc[idx, col] = 'background-color: #d4edda; color: #155724; font-weight: 600;'
+                            elif val < 0:
+                                styles.loc[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: 600;'
+                            else:
+                                styles.loc[idx, col] = 'background-color: #fff3cd; color: #856404; font-weight: 600;'
+
+                        # RSI coloring: Red when above 70 or below 30
+                        rsi_val = df.loc[idx, 'RSI (14)']
+                        if rsi_val > 70 or rsi_val < 30:
+                            styles.loc[idx, 'RSI (14)'] = 'color: #dc3545; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'RSI (14)'] = 'color: #28a745;'
+
+                        # Volume columns: Green if Last Wk Vol > Avg Wk Vol
+                        last_vol = df.loc[idx, 'Last Wk Vol']
+                        avg_vol = df.loc[idx, 'Avg Wk Vol']
+                        if last_vol > avg_vol:
+                            styles.loc[idx, 'Last Wk Vol'] = 'color: #10ac84; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Last Wk Vol'] = 'color: #ff6b6b;'
+
+                        styles.loc[idx, 'Avg Wk Vol'] = 'color: #54a0ff;'
+
+                        # Bold text for VWAP and ATR
+                        styles.loc[idx, 'VWAP (₹)'] = 'font-weight: bold; color: #6c5ce7;'
+                        styles.loc[idx, 'ATR (₹)'] = 'font-weight: bold; color: #e17055;'
+
+                        # Beta styling
+                        beta_val = df.loc[idx, 'Beta']
+                        if isinstance(beta_val, (int, float)):
+                            if beta_val > 1.2:
+                                styles.loc[idx, 'Beta'] = 'color: #dc3545; font-weight: bold;'
+                            elif beta_val < 0.8:
+                                styles.loc[idx, 'Beta'] = 'color: #10ac84; font-weight: bold;'
+                            else:
+                                styles.loc[idx, 'Beta'] = 'color: #fdcb6e; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Beta'] = 'color: #888888;'
+
+                        # Mean Target styling: Green if target > price, Red if target < price
+                        target_val = df.loc[idx, 'Mean Target (₹)']
+                        if isinstance(target_val, (int, float)):
+                            price = df.loc[idx, 'Price (₹)']
+                            if target_val > price:
+                                styles.loc[idx, 'Mean Target (₹)'] = 'color: #10ac84; font-weight: bold;'
+                            elif target_val < price:
+                                styles.loc[idx, 'Mean Target (₹)'] = 'color: #ff6b6b; font-weight: bold;'
+                            else:
+                                styles.loc[idx, 'Mean Target (₹)'] = 'color: #fdcb6e; font-weight: bold;'
+                        else:
+                            styles.loc[idx, 'Mean Target (₹)'] = 'color: #888888;'
+
+                        # Breakout styling
+                        if df.loc[idx, 'Vol Breakout'] == "🚨 YES":
+                            styles.loc[idx, 'Vol Breakout'] = 'background-color: #ff6b6b; color: white; font-weight: bold;'
+
+                    return styles
+
+                # Format volume columns to millions for display
+                display_nifty_df = nifty_df.copy()
+                display_nifty_df['Last Wk Vol'] = display_nifty_df['Last Wk Vol'].apply(format_volume_millions)
+                display_nifty_df['Avg Wk Vol'] = display_nifty_df['Avg Wk Vol'].apply(format_volume_millions)
+
+                styled_nifty = display_nifty_df.style.apply(apply_nifty_styling, axis=None)
+                st.dataframe(styled_nifty, use_container_width=True, hide_index=True)
+
+                # --- Color Legend for Section 4 ---
+                st.markdown("---")
+                st.markdown("**📊 Color Legend:**")
+                nifty_price_legend_col1, nifty_pct_legend_col2, nifty_rsi_legend_col3, nifty_vol_legend_col4, nifty_vwap_atr_legend_col5 = st.columns(5)
+                with nifty_price_legend_col1:
+                    st.markdown("🟢 <span style='color:#10ac84'>**Price ≥ LTP**</span>", unsafe_allow_html=True)
+                    st.markdown("🔴 <span style='color:#ff6b6b'>**Price < LTP**</span>", unsafe_allow_html=True)
+                with nifty_pct_legend_col2:
+                    st.markdown("🟢 <span style='color:#155724'>**Positive % Change**</span>", unsafe_allow_html=True)
+                    st.markdown("🔴 <span style='color:#721c24'>**Negative % Change**</span>", unsafe_allow_html=True)
+                with nifty_rsi_legend_col3:
+                    st.markdown("🔴 <span style='color:#dc3545'>**RSI > 70 or < 30**</span>", unsafe_allow_html=True)
+                    st.markdown("🟢 <span style='color:#28a745'>**RSI Normal (30-70)**</span>", unsafe_allow_html=True)
+                with nifty_vol_legend_col4:
+                    st.markdown("🟢 <span style='color:#10ac84'>**Last Wk Vol > Avg**</span>", unsafe_allow_html=True)
+                    st.markdown("🔴 <span style='color:#ff6b6b'>**Last Wk Vol ≤ Avg**</span>", unsafe_allow_html=True)
+                with nifty_vwap_atr_legend_col5:
+                    st.markdown("🟣 <span style='color:#6c5ce7'>**VWAP**</span>", unsafe_allow_html=True)
+                    st.markdown("🟠 <span style='color:#e17055'>**ATR**</span>", unsafe_allow_html=True)
+                st.markdown("*SMA/Support/Resistance shades: Darker = farther from current price*")
+                st.markdown("🔴 **Beta > 1.2 (High Volatility)** | 🟡 **Beta 0.8–1.2 (Moderate)** | 🟢 **Beta < 0.8 (Low Volatility)**")
+                st.markdown("🟢 **Mean Target > Price (Upside)** | 🔴 **Mean Target < Price (Downside)** | 🟡 **Mean Target = Price**")
+
+                st.caption(f"Showing {len(nifty_df)} NSE stocks | 🚨 Breakout stocks listed first | Price colored vs real-time LTP")
+            else:
+                st.warning("Unable to fetch NSE data. Please check your connection.")
+        else:
+            st.info("👆 Click 'Show Analysis' to load the NIFTY 50 breakout screener data.")
+
+    else:
+        st.error(f"❌ Unable to fetch sufficient data for **{active_ticker}**. Please verify the ticker symbol.")
+else:
+    st.info("👈 Please select or enter a ticker symbol from the sidebar to begin analysis.")
