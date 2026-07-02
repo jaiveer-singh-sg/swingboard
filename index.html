@@ -1,3 +1,547 @@
-<html>
-  Welcome to Swing Board
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swing Research Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 40px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 16px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            font-size: 2.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            color: #a0aec0;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Section Cards */
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .section-title {
+            font-size: 1.6rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #fff;
+        }
+
+        .section-title .icon {
+            font-size: 1.8rem;
+        }
+
+        .section-title .badge {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Section 1: Swing Ranking */
+        .param-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .param-category {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid;
+        }
+
+        .param-category.ma { border-left-color: #ff9f43; }
+        .param-category.volatility { border-left-color: #54a0ff; }
+        .param-category.momentum { border-left-color: #10ac84; }
+        .param-category.volume { border-left-color: #f368e0; }
+        .param-category.trend { border-left-color: #00d2d3; }
+
+        .param-category h3 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .param-category.ma h3 { color: #ff9f43; }
+        .param-category.volatility h3 { color: #54a0ff; }
+        .param-category.momentum h3 { color: #10ac84; }
+        .param-category.volume h3 { color: #f368e0; }
+        .param-category.trend h3 { color: #00d2d3; }
+
+        .param-list {
+            list-style: none;
+        }
+
+        .param-list li {
+            padding: 6px 0;
+            font-size: 0.9rem;
+            color: #b0b0b0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .param-list li::before {
+            content: "▸";
+            color: #667eea;
+            font-size: 0.8rem;
+        }
+
+        .guidelines {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            border-radius: 12px;
+            padding: 25px;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .guidelines h3 {
+            color: #fff;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+
+        .guideline-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .guideline-item:last-child {
+            border-bottom: none;
+        }
+
+        .guideline-icon {
+            font-size: 1.4rem;
+            min-width: 30px;
+            text-align: center;
+        }
+
+        .guideline-text {
+            flex: 1;
+        }
+
+        .guideline-text strong {
+            color: #fff;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .guideline-text span {
+            color: #a0aec0;
+            font-size: 0.9rem;
+        }
+
+        .bullish-badge {
+            display: inline-block;
+            background: rgba(16, 172, 132, 0.2);
+            color: #10ac84;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .breakout-badge {
+            display: inline-block;
+            background: rgba(255, 159, 67, 0.2);
+            color: #ff9f43;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        /* Section 2: Swing Analytics */
+        .analytics-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            border: 2px dashed rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .analytics-card:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .analytics-card .icon-large {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .analytics-card h3 {
+            font-size: 1.3rem;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .analytics-card p {
+            color: #a0aec0;
+            margin-bottom: 20px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Section 3: Reports */
+        .reports-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .report-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 25px 15px;
+            text-decoration: none;
+            color: #e0e0e0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .report-btn:hover {
+            background: rgba(102, 126, 234, 0.15);
+            border-color: #667eea;
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .report-btn .file-icon {
+            font-size: 2.2rem;
+        }
+
+        .report-btn .file-name {
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .report-btn .file-meta {
+            font-size: 0.75rem;
+            color: #888;
+        }
+
+        .no-files {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+            font-style: italic;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            .param-grid {
+                grid-template-columns: 1fr;
+            }
+            .reports-grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            }
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+    </style>
+<base target="_blank">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>📊 Swing Research Dashboard</h1>
+            <p>Multi-dimensional technical analysis framework for identifying high-probability swing trade setups across equities and indices.</p>
+        </div>
+
+        <!-- Section 1: Swing Ranking -->
+        <div class="section">
+            <div class="section-title">
+                <span class="icon">🏆</span>
+                <span>Swing Ranking — Key Parameters & Signal Framework</span>
+                <span class="badge">Reference</span>
+            </div>
+
+            <div class="param-grid">
+                <div class="param-category ma">
+                    <h3>📈 Moving Averages</h3>
+                    <ul class="param-list">
+                        <li>20-Day SMA — Short-term trend direction</li>
+                        <li>50-Day SMA — Medium-term trend anchor</li>
+                        <li>200-Day SMA — Long-term secular trend</li>
+                        <li>VWAP — Intraday/weekly volume-weighted fair value</li>
+                    </ul>
+                </div>
+
+                <div class="param-category volatility">
+                    <h3>📉 Volatility & Levels</h3>
+                    <ul class="param-list">
+                        <li>ATR (14-Day) — Average True Range for stop placement</li>
+                        <li>Support (20-Day Low) — Demand zone floor</li>
+                        <li>Resistance (20-Day High) — Supply zone ceiling</li>
+                        <li>Beta — Systematic risk vs. market benchmark</li>
+                    </ul>
+                </div>
+
+                <div class="param-category momentum">
+                    <h3>⚡ Momentum Oscillators</h3>
+                    <ul class="param-list">
+                        <li>RSI (14-Day) — Overbought/Oversold gauge</li>
+                        <li>MACD Line — Trend momentum crossover signal</li>
+                        <li>MACD Signal Line — Trigger for entry/exit timing</li>
+                        <li>MACD Histogram — Divergence confirmation</li>
+                    </ul>
+                </div>
+
+                <div class="param-category volume">
+                    <h3>📊 Volume Analytics</h3>
+                    <ul class="param-list">
+                        <li>Volume SMA (20-Day) — Baseline liquidity threshold</li>
+                        <li>Volume Breakout — 1.5x spike above average</li>
+                        <li>Weekly Volume Trend — Institutional accumulation</li>
+                        <li>Volume vs. Price — Confirmation of move validity</li>
+                    </ul>
+                </div>
+
+                <div class="param-category trend">
+                    <h3>🎯 Price Action</h3>
+                    <ul class="param-list">
+                        <li>Daily Change % — Short-term sentiment pulse</li>
+                        <li>Weekly Change % — Swing momentum gauge</li>
+                        <li>YTD Change % — Relative strength ranking</li>
+                        <li>Mean Price Target — Analyst consensus upside</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="guidelines">
+                <h3>🚦 Bullish / Breakout Identification Guidelines</h3>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">🟢</span>
+                    <div class="guideline-text">
+                        <strong>Golden Cross Alignment <span class="bullish-badge">BULLISH</span></strong>
+                        <span>Price trading above 20 SMA > 50 SMA > 200 SMA. All three sloping upward indicates strong bullish trend structure.</span>
+                    </div>
+                </div>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">📐</span>
+                    <div class="guideline-text">
+                        <strong>VWAP Reclaim <span class="bullish-badge">BULLISH</span></strong>
+                        <span>Price crosses back above VWAP after consolidation below. Signals renewed buying interest at volume-weighted fair value.</span>
+                    </div>
+                </div>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">💥</span>
+                    <div class="guideline-text">
+                        <strong>Volume Breakout Confirmation <span class="breakout-badge">BREAKOUT</span></strong>
+                        <span>Volume spikes 1.5x above 20-day average while price breaks resistance. High conviction institutional participation.</span>
+                    </div>
+                </div>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">🌊</span>
+                    <div class="guideline-text">
+                        <strong>RSI Momentum Reversal <span class="bullish-badge">BULLISH</span></strong>
+                        <span>RSI bounces off 30 (oversold) and trends toward 50+. Avoid entries when RSI > 70 unless in strong parabolic trend.</span>
+                    </div>
+                </div>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">🎯</span>
+                    <div class="guideline-text">
+                        <strong>Resistance Break + Retest <span class="breakout-badge">BREAKOUT</span></strong>
+                        <span>Price closes above 20-day resistance on elevated volume. Ideal entry on retest of broken resistance as new support.</span>
+                    </div>
+                </div>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">📏</span>
+                    <div class="guideline-text">
+                        <strong>ATR-Based Stop Placement <span class="bullish-badge">RISK MGMT</span></strong>
+                        <span>Set stop-loss at 1.5x–2x ATR below entry. Tight ATR = tighter stops; wide ATR = wider stops or smaller position size.</span>
+                    </div>
+                </div>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">🏢</span>
+                    <div class="guideline-text">
+                        <strong>Beta-Adjusted Sizing <span class="bullish-badge">RISK MGMT</span></strong>
+                        <span>Beta > 1.2 = high volatility, reduce position size. Beta < 0.8 = defensive, suitable for larger allocations in uncertain markets.</span>
+                    </div>
+                </div>
+
+                <div class="guideline-item">
+                    <span class="guideline-icon">🎯</span>
+                    <div class="guideline-text">
+                        <strong>Mean Target Upside Gap <span class="bullish-badge">CONVICTION</span></strong>
+                        <span>Mean analyst target significantly above current price with positive momentum = asymmetric risk/reward setup.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Swing Analytics -->
+        <div class="section">
+            <div class="section-title">
+                <span class="icon">📈</span>
+                <span>Swing Analytics — Live Dashboard</span>
+                <span class="badge">Interactive</span>
+            </div>
+
+            <div class="analytics-card">
+                <div class="icon-large">🖥️</div>
+                <h3>Technical Analysis Dashboard</h3>
+                <p>Real-time multi-ticker screening with interactive Plotly charts, comparative watchlist tables, and NASDAQ 100 breakout screener. Features RSI, MACD, VWAP, volume analytics, and color-coded signal detection.</p>
+                <a href="portal/nasdaqboard.html" class="btn-primary" target="_blank">
+                    <span>🚀</span> Open Dashboard
+                </a>
+            </div>
+        </div>
+
+        <!-- Section 3: Reports -->
+        <div class="section">
+            <div class="section-title">
+                <span class="icon">📑</span>
+                <span>Research Reports Archive</span>
+                <span class="badge">Library</span>
+            </div>
+
+            <div class="reports-grid">
+                <a href="reports/earnings_report.html" class="report-btn" target="_blank">
+                    <span class="file-icon">💰</span>
+                    <span class="file-name">Earnings Report</span>
+                    <span class="file-meta">HTML Report</span>
+                </a>
+                <a href="reports/monthly_report.html" class="report-btn" target="_blank">
+                    <span class="file-icon">📆</span>
+                    <span class="file-name">Monthly Report</span>
+                    <span class="file-meta">HTML Report</span>
+                </a>
+                <a href="reports/sector_analysis.html" class="report-btn" target="_blank">
+                    <span class="file-icon">🏭</span>
+                    <span class="file-name">Sector Analysis</span>
+                    <span class="file-meta">HTML Report</span>
+                </a>
+                <a href="reports/weekly_report.html" class="report-btn" target="_blank">
+                    <span class="file-icon">📅</span>
+                    <span class="file-name">Weekly Report</span>
+                    <span class="file-meta">HTML Report</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; padding: 20px; color: #666; font-size: 0.85rem;">
+            <p>Swing Research Dashboard v2.1 | Built with Streamlit + Plotly + yFinance</p>
+        </div>
+    </div>
+</body>
 </html>
