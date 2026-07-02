@@ -1,0 +1,100 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Swing Trading Dashboard v2</title>
+
+<!-- Referencing a CSS file inside a subfolder -->
+<link rel="stylesheet" href="css/styles.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+</head>
+<body>
+
+<header>
+
+<h2>Swing Trading Dashboard v2</h2>
+<!-- <p>Loads <b>tickersdata.csv</b> automatically (implement fetch('tickersdata.csv')) and supports uploading a replacement CSV.</p> -->
+<input id="csvFileInput" type="file" accept=".csv" hidden >
+<button id="browseBtn">
+📂 Choose CSV
+</button>
+
+<button id="refreshBtn">
+🔄 Refresh
+</button>
+
+<button id="reloadBtn">
+
+↺ Reload Default
+
+</button>
+<div id="statusBar">
+
+Ready
+
+</div>
+</header>
+<div class="toolbar">
+<input id="searchBox" placeholder="Search ticker">
+
+<select id="sortSelect">
+<option value="score">Swing Score</option>
+<option value="daily">Daily %</option>
+<option value="weekly">Weekly %</option>
+<option value="price">Price</option>
+<option value="reward">Reward</option>
+<option value="rsi">RSI</option>
+</select>
+
+</div>
+
+<section id="filterBar">
+<button class="filterBtn activeFilter"> All </button>
+<button class="filterBtn"> Bullish </button>
+<button class="filterBtn"> Bearish </button>
+<button class="filterBtn">  Breakouts </button>
+<button class="filterBtn"> Near Support </button>
+<button class="filterBtn"> Near Resistance </button>
+<button class="filterBtn"> Above 200 SMA </button>
+
+</section>
+<section id="summaryCards"></section>
+
+<section class="heatmapPanel">
+
+    <div class="panelTitle">
+        📊 Technical Heatmap
+    </div>
+
+    <div id="heatmapContainer"></div>
+
+</section>
+
+<main id="tickerContainer">
+
+</main>
+
+<footer>
+
+Swing Dashboard v3
+Market data loaded from tickerdata.csv
+
+</footer>
+<!-- Traditional Method: Order matters! Dependents load last -->
+<!--<script src="js/helpers.js"></script>	-->
+
+<script src="js/globals.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/indicators.js"></script>
+<script src="js/filters.js"></script>
+<script src="js/heatmap.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/loader.js"></script>
+<script src="js/swingscript.js"></script>
+ 
+</body>
+
+</html>
