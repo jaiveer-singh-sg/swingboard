@@ -1,0 +1,648 @@
+/*=====================================================
+  COLOR PALETTE
+@import url("cards.css");
+@import url("widgets.css");
+@import url("charts.css");
+
+=====================================================*/
+
+:root{
+
+    --bg:#020617;
+
+    --panel:#0f172a;
+
+    --panel2:#172554;
+
+    --panelAlt:#1e293b;
+
+    --border:#334155;
+
+    --green:#22c55e;
+
+    --red:#ef4444;
+
+    --yellow:#f59e0b;
+
+    --blue:#38bdf8;
+
+    --purple:#a855f7;
+
+    --text:#e2e8f0;
+
+    --muted:#94a3b8;
+
+}
+
+
+/*=====================================================
+  BODY
+=====================================================*/
+
+body{
+
+    background:var(--bg);
+
+    color:var(--text);
+
+    font-family:Inter,Segoe UI,Arial,sans-serif;
+
+}
+
+
+/*=====================================================
+  BUTTONS
+=====================================================*/
+
+.btnPrimary,
+.btnGreen,
+.btnBlue{
+
+    padding:10px 18px;
+
+    border-radius:10px;
+
+    border:none;
+
+    cursor:pointer;
+
+    font-weight:600;
+
+    transition:.25s;
+
+}
+
+.btnPrimary{
+
+    background:#334155;
+
+}
+
+.btnGreen{
+
+    background:#15803d;
+
+}
+
+.btnBlue{
+
+    background:#2563eb;
+
+}
+
+.btnPrimary:hover,
+.btnGreen:hover,
+.btnBlue:hover{
+
+    transform:translateY(-2px);
+
+    opacity:.92;
+
+}
+
+
+/*=====================================================
+  SEARCH
+=====================================================*/
+
+.searchBox{
+
+    background:#111827;
+
+    border:1px solid var(--border);
+
+    border-radius:10px;
+
+    padding:10px 14px;
+
+    color:white;
+
+    min-width:220px;
+
+}
+
+
+/*=====================================================
+  SUMMARY CARDS
+=====================================================*/
+
+.summaryCard{
+
+    background:var(--panel);
+
+    border:1px solid var(--border);
+
+    border-radius:14px;
+
+    padding:16px;
+
+    text-align:center;
+
+    transition:.25s;
+
+}
+
+.summaryCard:hover{
+
+    transform:translateY(-3px);
+
+    border-color:var(--blue);
+
+}
+
+.summaryTitle{
+
+    color:var(--muted);
+
+    font-size:11px;
+
+    text-transform:uppercase;
+
+    letter-spacing:1px;
+
+}
+
+.summaryValue{
+
+    font-size:26px;
+
+    font-weight:700;
+
+    margin-top:6px;
+
+}
+
+
+/*=====================================================
+  FILTER BUTTONS
+=====================================================*/
+
+.filterBtn{
+
+    padding:8px 16px;
+
+    border-radius:999px;
+
+    background:#1e293b;
+
+    border:1px solid #334155;
+
+    cursor:pointer;
+
+}
+
+.filterBtn:hover{
+
+    border-color:var(--blue);
+
+}
+
+.activeFilter{
+
+    background:#0369a1;
+
+}
+
+
+/*=====================================================
+  STOCK CARD
+=====================================================*/
+
+.stockCard{
+
+    border-radius:18px;
+
+    border:1px solid var(--border);
+
+    overflow:hidden;
+
+    transition:.25s;
+
+}
+
+.stockCard:hover{
+
+    transform:translateY(-3px);
+
+    border-color:#60a5fa;
+
+}
+
+
+/* Alternate backgrounds */
+
+.stockCard:nth-child(odd){
+
+    background:#0f172a;
+
+}
+
+.stockCard:nth-child(even){
+
+    background:#162032;
+
+}
+
+
+/*=====================================================
+  HEADER
+=====================================================*/
+
+.cardHeader{
+
+    padding:18px 22px;
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+}
+
+
+/*=====================================================
+  RECOMMENDATION RIBBON
+=====================================================*/
+
+.ribbon{
+
+    display:inline-block;
+
+    padding:5px 14px;
+
+    border-radius:999px;
+
+    font-size:12px;
+
+    font-weight:700;
+
+}
+
+.ribbon.buy{
+
+    background:#14532d;
+
+    color:#86efac;
+
+}
+
+.ribbon.watch{
+
+    background:#78350f;
+
+    color:#fde68a;
+
+}
+
+.ribbon.avoid{
+
+    background:#7f1d1d;
+
+    color:#fecaca;
+
+}
+
+
+/*=====================================================
+  SWING SCORE
+=====================================================*/
+
+.scoreBar{
+
+    height:10px;
+
+    background:#1e293b;
+
+    border-radius:999px;
+
+    overflow:hidden;
+
+}
+
+.scoreFill{
+
+    height:100%;
+
+    background:linear-gradient(
+        90deg,
+        #22c55e,
+        #84cc16,
+        #f59e0b
+    );
+
+}
+
+
+/*=====================================================
+  TECHNICAL WIDGET GRID
+=====================================================*/
+
+.widgetGrid{
+
+    display:grid;
+
+    grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+
+    gap:10px;
+
+    padding:18px;
+
+}
+
+
+.widget{
+
+    background:#111827;
+
+    border-radius:12px;
+
+    padding:12px;
+
+    text-align:center;
+
+    border:1px solid #263244;
+
+}
+
+.widgetTitle{
+
+    font-size:11px;
+
+    color:var(--muted);
+
+    text-transform:uppercase;
+
+}
+
+.widgetValue{
+
+    margin-top:6px;
+
+    font-weight:700;
+
+}
+
+
+/*=====================================================
+  STATUS COLORS
+=====================================================*/
+
+.good{
+
+    color:var(--green);
+
+}
+
+.warning{
+
+    color:var(--yellow);
+
+}
+
+.bad{
+
+    color:var(--red);
+
+}
+
+.info{
+
+    color:var(--blue);
+
+}
+
+
+/*=====================================================
+  SUPPORT / RESISTANCE GAUGE
+=====================================================*/
+
+.gauge{
+
+    height:12px;
+
+    border-radius:999px;
+
+    background:#334155;
+
+    position:relative;
+
+    margin:15px 0;
+
+}
+
+.gaugeFill{
+
+    position:absolute;
+
+    left:0;
+
+    top:0;
+
+    height:100%;
+
+    background:linear-gradient(
+        90deg,
+        #22c55e,
+        #eab308,
+        #ef4444
+    );
+
+}
+
+.gaugeMarker{
+
+    width:18px;
+
+    height:18px;
+
+    border-radius:50%;
+
+    background:white;
+
+    border:3px solid #2563eb;
+
+    position:absolute;
+
+    top:-3px;
+
+}
+
+
+/*=====================================================
+  DETAILS PANEL
+=====================================================*/
+
+.details{
+
+    display:grid;
+
+    grid-template-columns:2fr 1fr;
+
+    gap:18px;
+
+    padding:18px;
+
+}
+
+
+/*=====================================================
+  TABLE STYLE
+=====================================================*/
+
+.metricTable{
+
+    width:100%;
+
+    border-collapse:collapse;
+
+}
+
+.metricTable td{
+
+    padding:8px;
+
+    border-bottom:1px solid #243244;
+
+}
+
+.metricTable td:first-child{
+
+    color:var(--muted);
+
+}
+
+
+/*=====================================================
+  RESPONSIVE
+=====================================================*/
+
+@media(max-width:900px){
+
+.details{
+
+    grid-template-columns:1fr;
+
+}
+
+.cardHeader{
+
+    flex-direction:column;
+
+    align-items:flex-start;
+
+    gap:12px;
+
+}
+
+.widgetGrid{
+
+    grid-template-columns:repeat(2,1fr);
+
+}
+
+}
+
+@media(max-width:640px){
+
+.widgetGrid{
+
+    grid-template-columns:1fr;
+
+}
+
+.summaryValue{
+
+    font-size:20px;
+
+}
+
+.searchBox{
+
+    width:100%;
+
+}
+
+}
+
+.heatmapPanel{
+
+    background:#0f172a;
+
+    border:1px solid #334155;
+
+    border-radius:14px;
+
+    margin-bottom:20px;
+
+    overflow:hidden;
+
+}
+
+.panelTitle{
+
+    padding:14px 18px;
+
+    font-size:18px;
+
+    font-weight:bold;
+
+    border-bottom:1px solid #334155;
+
+}
+
+.heatmapTable{
+
+    width:100%;
+
+    border-collapse:collapse;
+
+}
+
+.heatmapTable th{
+
+    background:#1e293b;
+
+    padding:10px;
+
+}
+
+.heatmapTable td{
+
+    text-align:center;
+
+    padding:10px;
+
+    border-top:1px solid #233245;
+
+}
+
+.heatGreen{
+
+    color:#22c55e;
+
+    font-weight:bold;
+
+}
+
+.heatYellow{
+
+    color:#fbbf24;
+
+}
+
+.heatRed{
+
+    color:#ef4444;
+
+}
+
+.heatTicker{
+
+    cursor:pointer;
+
+    font-weight:bold;
+
+    color:#7dd3fc;
+
+}
